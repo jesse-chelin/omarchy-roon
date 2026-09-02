@@ -564,26 +564,43 @@ function detailIsGrid(rows) {
   return withArt / rows.length >= 0.6
 }
 
-// One sentence used to stand in for every empty pane — a queue with nothing
+// An empty pane is where a product either explains itself or looks broken.
+// One sentence used to stand in for every one of them — a queue with nothing
 // in it, a log just cleared, a search that found nothing — and it was only
-// correct in the first case. An empty pane is exactly where a product has to
-// say what happened.
+// correct in the first case.
+//
+// Each returns a glyph, a line saying what is empty, and a line saying what
+// would fill it, because "no favourites yet" without "press f on an album" is
+// only half an answer.
 function emptyState(mode, filterText, query) {
-  if (filterText) return "Nothing here matches \u201c" + filterText + "\u201d"
+  if (filterText) {
+    return { glyph: GLYPH.magnify,
+             title: "Nothing here matches \u201c" + filterText + "\u201d",
+             hint: "Esc clears the filter" }
+  }
   switch (mode) {
     case "queue":
-      return "Nothing queued after the current track"
+      return { glyph: GLYPH.queue,
+               title: "Nothing queued after this track",
+               hint: "Add Next and Queue, on any album, fill this" }
     case "history":
-      return "Nothing played yet.\nRecords you listen to are remembered here."
+      return { glyph: GLYPH.history,
+               title: "Nothing played yet",
+               hint: "Records you listen to are remembered here, newest first" }
     case "favourites":
-      return "No favourites yet.\nPress f on an album to keep it here."
+      return { glyph: GLYPH.heartOff,
+               title: "No favourites yet",
+               hint: "Press f on an album to keep it here" }
     case "search":
-      return query ? "Roon found nothing for \u201c" + query + "\u201d"
-                   : "Type something to search"
+      return query
+        ? { glyph: GLYPH.magnify,
+            title: "Roon found nothing for \u201c" + query + "\u201d",
+            hint: "Search covers your library and the catalogues you subscribe to" }
+        : { glyph: GLYPH.magnify, title: "Search Roon", hint: "Type a name and press enter" }
     case "level":
-      return "Nothing in here"
+      return { glyph: GLYPH.folder, title: "Nothing in here", hint: "" }
     default:
-      return "Choose a category"
+      return { glyph: GLYPH.home, title: "Choose a category", hint: "" }
   }
 }
 

@@ -73,8 +73,11 @@ Item {
       // music, it belongs with the music, and nothing moves while it shows.
       Text {
         width: parent.width
+        // Silent when there is no zone: the setup card above is already
+        // saying what is happening, and a second, shorter, less accurate
+        // version of it in the corner only contradicts it.
         text: root.b.toast !== "" ? root.b.toast
-          : (root.live ? root.zone.title : (root.b.ready ? "Nothing playing" : "Connecting…"))
+          : (root.live ? root.zone.title : (root.b.ready ? "Nothing playing" : ""))
         color: root.b.toast !== "" ? Color.accent : Qt.darker(root.b.foreground, 1.15)
         font.family: root.b.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -94,104 +97,96 @@ Item {
   }
 
   // -- how loud, and where -------------------------------------------------
-  Item {
+  //
+  // Fixed width, every part of it. Room names vary — "WIIM" and "Media Room -
+  // Sonos" differ by ninety pixels — and this block anchors the right edge of
+  // the seek bar, so a name that sized itself made the seek bar jump every
+  // time you changed rooms. The room sits last and elides into its lane.
+  Row {
     id: rightBlock
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
-    width: root.sideWidth
-    height: rightColumn.implicitHeight
+    spacing: Style.space(16)
+    width: volumeGroup.width + spacing + roomLane.width
 
-    Column {
-      id: rightColumn
-      anchors.right: parent.right
-      width: parent.width
-      spacing: Style.space(3)
+    Row {
+      id: volumeGroup
+      spacing: Style.space(7)
+      width: root.volumePercent >= 0
+        ? glyph.width + spacing + slider.width + spacing + readout.width : 0
+      visible: root.volumePercent >= 0
 
-      Row {
-        anchors.right: parent.right
-        spacing: Style.space(7)
-        visible: root.volumePercent >= 0
+      Text {
+        id: glyph
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(16)
+        text: root.muted ? Model.GLYPH.muted : Model.GLYPH.volume
+        color: root.muted ? Color.urgent : Qt.darker(root.b.foreground, 1.3)
+        font.family: root.b.fontFamily
+        font.pixelSize: Style.font.bodySmall
 
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: root.muted ? Model.GLYPH.muted : Model.GLYPH.volume
-          color: root.muted ? Color.urgent : Qt.darker(root.b.foreground, 1.3)
-          font.family: root.b.fontFamily
-          font.pixelSize: Style.font.bodySmall
-
-          MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.service.toggleMute("")
-          }
-        }
-
-        PanelSlider {
-          anchors.verticalCenter: parent.verticalCenter
-          width: Math.max(Style.space(70), root.sideWidth - Style.space(96))
-          // The overlay has no bar to borrow a palette from — PanelSlider only
-          // wants `bar` for two colours, so it gets them from the card.
-          trackColor: Style.selectedFillFor(root.b.foreground, Color.accent)
-          fillColor: root.b.foreground
-          knobColor: root.b.foreground
-          tickColor: root.b.background
-          minimum: 0
-          maximum: 100
-          step: 1
-          integer: true
-          opacity: root.muted ? 0.45 : 1
-          value: Math.max(0, root.volumePercent)
-          onMoved: function(percent) { root.service.setVolume(percent, "") }
-          onReleased: function(percent) { root.service.setVolume(percent, "") }
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          width: Style.space(28)
-          horizontalAlignment: Text.AlignRight
-          text: root.volumePercent + "%"
-          color: Qt.darker(root.b.foreground, 1.7)
-          font.family: root.b.fontFamily
-          font.pixelSize: Style.font.caption
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.service.toggleMute("")
         }
       }
 
-      Row {
-        anchors.right: parent.right
-        spacing: Style.space(14)
+      PanelSlider {
+        id: slider
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(96)
+        trackColor: Style.selectedFillFor(root.b.foreground, Color.accent)
+        fillColor: root.b.foreground
+        knobColor: root.b.foreground
+        tickColor: root.b.background
+        minimum: 0
+        maximum: 100
+        step: 1
+        integer: true
+        opacity: root.muted ? 0.45 : 1
+        value: Math.max(0, root.volumePercent)
+        onMoved: function(percent) { root.service.setVolume(percent, "") }
+        onReleased: function(percent) { root.service.setVolume(percent, "") }
+      }
 
-        // The active room: the most consequential piece of state in a
-        // multi-room product, so it gets one unmistakable place per surface,
-        // and that place is the one you press to change it.
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          visible: root.live
-          text: Model.GLYPH.speaker + "  " + Model.zoneLabel(root.zone)
-          color: Color.accent
-          font.family: root.b.fontFamily
-          font.pixelSize: Style.font.caption
+      Text {
+        id: readout
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(28)
+        horizontalAlignment: Text.AlignRight
+        text: root.volumePercent + "%"
+        color: Qt.darker(root.b.foreground, 1.7)
+        font.family: root.b.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
 
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.b.cycleZone()
-          }
-        }
+    // The active room: the most consequential piece of state in a multi-room
+    // product, so it gets one unmistakable place per surface, and that place
+    // is the one you press to change it.
+    Item {
+      id: roomLane
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(104)
+      height: room.implicitHeight
 
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          visible: root.b.ready
-          text: "?  shortcuts"
-          color: root.b.helpOpen ? Color.accent : Qt.darker(root.b.foreground, 1.8)
-          font.family: root.b.fontFamily
-          font.pixelSize: Style.font.caption
+      Text {
+        id: room
+        anchors.fill: parent
+        visible: root.live
+        text: Model.GLYPH.speaker + "  " + Model.zoneLabel(root.zone)
+        color: Color.accent
+        font.family: root.b.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+        verticalAlignment: Text.AlignVCenter
 
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.b.helpOpen = !root.b.helpOpen
-          }
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.b.cycleZone()
         }
       }
     }

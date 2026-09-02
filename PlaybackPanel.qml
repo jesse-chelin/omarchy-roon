@@ -134,6 +134,9 @@ Item {
       fontFamily: root.fontFamily
       reduceMotion: root.widget ? root.widget.reduceMotionSetting : false
       contentWidth: parent.width
+      // The popup is already a card; a second border inside it reads as a
+      // mistake rather than as emphasis.
+      framed: false
     }
 
     // -- what is playing ---------------------------------------------------

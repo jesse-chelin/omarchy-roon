@@ -163,6 +163,8 @@ Item {
             elide: Text.ElideRight
           }
 
+          // One fact, and it is the artist. When and where it played needs
+          // width this tile does not have, so it waits for the list view.
           Text {
             width: tile.b.tileArt
             text: tile.modelData.subtitle
@@ -307,7 +309,9 @@ Item {
           }
 
           Text {
-            text: contentRow.item.subtitle
+            text: contentRow.item.detail
+              ? contentRow.item.subtitle + "  ·  " + contentRow.item.detail
+              : contentRow.item.subtitle
             color: contentRow.current ? contentRow.b.selectedText
               : Qt.darker(contentRow.b.foreground, 1.5)
             font.family: contentRow.b.fontFamily
@@ -383,18 +387,46 @@ Item {
       * (activeView.contentY / Math.max(1, activeView.contentHeight - activeView.height))
   }
 
-  Text {
+  // An empty pane is where a product either explains itself or looks broken.
+  Column {
+    id: nothing
     anchors.centerIn: parent
+    width: Math.min(Style.space(340), parent.width - Style.space(40))
+    spacing: Style.space(10)
     visible: root.items.length === 0
-    text: Model.emptyState(root.browser.emptyMode,
-                           root.browser.filterText,
-                           root.browser.lastQuery)
-    color: Qt.darker(root.browser.foreground, 1.4)
-    font.family: root.browser.fontFamily
-    font.pixelSize: Style.font.body
-    horizontalAlignment: Text.AlignHCenter
-    lineHeight: 1.35
-    width: parent.width - Style.space(40)
-    wrapMode: Text.WordWrap
+
+    readonly property var blank: Model.emptyState(root.browser.emptyMode,
+                                                  root.browser.filterText,
+                                                  root.browser.lastQuery)
+
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      text: nothing.blank.glyph
+      color: Util.alpha(root.browser.foreground, 0.28)
+      font.family: root.browser.fontFamily
+      font.pixelSize: Style.space(44)
+    }
+
+    Text {
+      width: parent.width
+      text: nothing.blank.title
+      color: Qt.darker(root.browser.foreground, 1.25)
+      font.family: root.browser.fontFamily
+      font.pixelSize: Style.font.subtitle
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
+      width: parent.width
+      visible: text !== ""
+      text: nothing.blank.hint
+      color: Qt.darker(root.browser.foreground, 1.9)
+      font.family: root.browser.fontFamily
+      font.pixelSize: Style.font.caption
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+      lineHeight: 1.3
+    }
   }
 }

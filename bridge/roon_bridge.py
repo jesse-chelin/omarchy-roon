@@ -1052,25 +1052,30 @@ class RoonBackend:
         loaded = as_dict(loaded)
         info = loaded.get("list") or {}
         count = int(info.get("count") or 0)
-        have = len(loaded.get("items") or [])
-        if count <= have or count > FULL_LOAD_LIMIT:
+        titles = [item.get("title") for item in loaded.get("items") or []]
+        if count > FULL_LOAD_LIMIT:
             return
 
-        opts = {"hierarchy": "browse", "offset": have, "count": count - have}
-        if self._browse_zone:
-            opts["zone_or_output_id"] = self._browse_zone
-        try:
-            rest = as_dict(self._api.browse_load(opts))
-        except Exception as exc:  # noqa: BLE001
-            log("full load failed: %r" % exc)
-            return
+        # A level shorter than one page arrives complete, and used to fall out
+        # here without an index — which left every level between forty-one and
+        # a hundred rows railless, exactly the sizes that start to need one.
+        if count > len(titles):
+            opts = {"hierarchy": "browse", "offset": len(titles),
+                    "count": count - len(titles)}
+            if self._browse_zone:
+                opts["zone_or_output_id"] = self._browse_zone
+            try:
+                rest = as_dict(self._api.browse_load(opts))
+            except Exception as exc:  # noqa: BLE001
+                log("full load failed: %r" % exc)
+                return
+            rest_items = rest.get("items") or []
+            if not rest_items:
+                return
+            self._emit_browse(rest, len(titles), complete=False)
+            titles += [item.get("title") for item in rest_items]
 
-        rest_items = rest.get("items") or []
-        if not rest_items:
-            return
-        self._emit_browse(rest, have, complete=False)
-        self._emit_letters([i.get("title") for i in loaded.get("items") or []]
-                           + [i.get("title") for i in rest_items])
+        self._emit_letters(titles)
 
     def _emit_letters(self, titles):
         """First row index for each initial letter, in Roon's own sort order.

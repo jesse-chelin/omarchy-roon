@@ -80,6 +80,11 @@ Item {
   // signal that the browser is holding every row.
   property var letters: []
 
+  // Whether the log has answered yet, as distinct from having answered
+  // "nothing". The browser opens on Recently played, and on a first run
+  // that has to mean "empty" rather than "not asked yet".
+  property bool historyLoaded: false
+
   // The upcoming tracks for one zone, streamed by the core.
   property var queue: []
   property string queueZoneId: ""
@@ -548,8 +553,12 @@ Item {
           root.queueZoneId = ""
         }
         root.status = payload
+        // Any state that is not an error supersedes one. Clearing only on
+        // "ready" left a stale "Lost the Roon core" strip sitting above a card
+        // that had already moved on to asking for authorization — two answers
+        // to the same question, one of them out of date.
         if (payload.state === "error") root.noteError(payload.message || "Roon error")
-        else if (payload.state === "ready") root.dismissError()
+        else root.dismissError()
         break
       case "zones":
         var previous = root.activeZone
@@ -577,6 +586,7 @@ Item {
         break
       case "history":
         root.history = payload.items || []
+        root.historyLoaded = true
         break
       case "favourites":
         root.favourites = payload.items || []

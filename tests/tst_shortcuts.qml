@@ -61,20 +61,27 @@ TestCase {
     var seen = {}
     var modes = ["queue", "history", "favourites", "search", "level", ""]
     for (var i = 0; i < modes.length; i++) {
-      var text = Model.emptyState(modes[i], "", "")
-      verify(text.length > 0, modes[i] + " has no empty state")
-      verify(seen[text] === undefined, modes[i] + " repeats " + modes[i - 1])
-      seen[text] = true
+      var state = Model.emptyState(modes[i], "", "")
+      verify(state.title.length > 0, modes[i] + " has no empty state")
+      verify(state.glyph.length > 0, modes[i] + " has no glyph")
+      verify(seen[state.title] === undefined, modes[i] + " repeats another pane")
+      seen[state.title] = true
     }
   }
 
+  // The two a new user meets first, and the two where "it is empty" alone
+  // reads as a fault rather than as a beginning.
+  function test_the_two_a_new_user_meets_say_what_would_fill_them() {
+    verify(Model.emptyState("history", "", "").hint.length > 0)
+    verify(Model.emptyState("favourites", "", "").hint.indexOf("f") >= 0)
+  }
+
   function test_a_filter_that_matches_nothing_names_the_filter() {
-    var text = Model.emptyState("history", "backrooms", "")
-    verify(text.indexOf("backrooms") >= 0)
+    verify(Model.emptyState("history", "backrooms", "").title.indexOf("backrooms") >= 0)
   }
 
   function test_a_search_that_found_nothing_names_the_query() {
-    verify(Model.emptyState("search", "", "Talk Talk").indexOf("Talk Talk") >= 0)
+    verify(Model.emptyState("search", "", "Talk Talk").title.indexOf("Talk Talk") >= 0)
   }
 
   function test_no_key_is_claimed_twice() {

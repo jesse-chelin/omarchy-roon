@@ -119,14 +119,18 @@ Item {
     var entries = service ? service.history : []
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i]
+      // A cover tile is 150px wide. Four facts joined by separators elide to
+      // "Superheist · WII…", which is three facts spent to show none. The
+      // artist is what identifies a record beside its cover; the rest is the
+      // reward for putting the cursor on it.
       var detail = []
-      if (e.artist) detail.push(e.artist)
       if (e.tracks > 1) detail.push(e.tracks + " tracks")
       if (e.zone) detail.push(e.zone)
       detail.push(Model.ago(e.at))
       out.push({
         title: e.album || e.title || "",
-        subtitle: detail.join("  ·  "),
+        subtitle: e.artist || "",
+        detail: detail.join("  ·  "),
         item_key: "h" + i,
         hint: "action",
         art: e.art || "",
@@ -242,9 +246,9 @@ Item {
     ? (items.length === 0 ? "nothing queued"
        : items.length + (items.length === 1 ? " track" : " tracks") + " after this one")
     : (historyMode
-    ? (items.length + (items.length === 1 ? " album" : " albums") + " · this plugin's own log")
+    ? (items.length + (items.length === 1 ? " album" : " albums"))
     : (favouritesMode
-    ? (items.length + (items.length === 1 ? " album" : " albums") + " · this plugin's own list")
+    ? (items.length + (items.length === 1 ? " album" : " albums"))
     : (searchResults ? "“" + lastQuery + "”" : Model.levelCount(browse))))
   readonly property string trail: {
     if (syntheticMode) return ""
@@ -431,15 +435,23 @@ Item {
   function ensureRootSelected() {
     if (!service || !roots || roots.length === 0) return
     if (rootAutoSelected || selectedRootKey) return
-    // Open on Recently played. The old first screen was Roon's Library level:
-    // six words of plain text in the top third of a fixed card, which is the
-    // rail's job repeated in the content pane. This is a wall of covers, and
-    // covers are how people recognise records.
-    for (var i = 0; i < roots.length; i++) {
-      if (roots[i].mode === "history") {
-        root.rootAutoSelected = true
-        root.selectRoot(i)
-        return
+    if (!service || roots.length === 0) return
+    // The log has to have answered before this can choose. Opening on an
+    // empty Recently played is the right screen for someone returning and the
+    // worst possible screen for someone arriving: a new user would meet the
+    // plugin as a blank pane saying nothing has happened yet.
+    if (!service.historyLoaded) return
+
+    // With something in it, Recently played is the fastest route back to what
+    // you were listening to, and it is a wall of covers. Empty, the Library's
+    // own categories are the map a new user actually needs.
+    if (service.history.length > 0) {
+      for (var i = 0; i < roots.length; i++) {
+        if (roots[i].mode === "history") {
+          root.rootAutoSelected = true
+          root.selectRoot(i)
+          return
+        }
       }
     }
     for (var j = 0; j < roots.length; j++) {
@@ -701,8 +713,9 @@ Item {
     for (var i = 0; i < zones.length; i++) if (zones[i].zone_id === current) { index = i; break }
     var next = zones[(index + 1) % zones.length]
     service.selectZone(next.zone_id)
-    root.toast = Model.GLYPH.speaker + "  " + next.display_name
-    toastTimer.restart()
+    // No toast: the room has a permanent home in the player bar now, and it
+    // updates as this lands. Announcing it as well put the same name on both
+    // sides of the bar at once, in place of the track title.
   }
 
   function toggleView() {
@@ -765,6 +778,8 @@ Item {
       root.onLevelChanged()
     }
     function onRootsChanged() { root.ensureRootSelected() }
+    // Either of the two inputs to that choice can land second.
+    function onHistoryLoadedChanged() { root.ensureRootSelected() }
     // MPRIS Raise: a desktop client asking to see the player.
     function onRaiseRequested() { root.open("{}") }
     function onMessageReceived(text, isError) {
@@ -933,6 +948,22 @@ BorderSurface {
             width: parent.width
             height: titleRow.implicitHeight
 
+            Text {
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              visible: root.ready
+              text: "?  shortcuts"
+              color: root.helpOpen ? Color.accent : Qt.darker(root.foreground, 1.9)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.helpOpen = !root.helpOpen
+              }
+            }
+
             Row {
               id: titleRow
               spacing: root.gap
@@ -1078,7 +1109,7 @@ BorderSurface {
             foreground: root.foreground
             fontFamily: root.fontFamily
             reduceMotion: root.reduceMotion
-            contentWidth: Math.min(Style.space(460), parent.width - root.pad * 2)
+            contentWidth: Math.min(Style.space(540), parent.width - root.pad * 2)
           }
 
           Row {
