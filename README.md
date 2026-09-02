@@ -42,6 +42,36 @@ That is the whole install. The Python environment the bridge runs in is built
 on first launch — the plugin tells you it is doing it — and the token is
 written to `~/.local/state/omarchy-roon/session.json` (mode 0600).
 
+### Uninstall
+
+```sh
+omarchy plugin remove io.github.jesse-chelin.roon
+```
+
+That removes the plugin and its bar entry. Three things live outside the
+plugin folder and are deliberately left behind, because removing a plugin to
+reinstall it should not cost you your pairing or your listening history:
+
+| Path | What is in it |
+|------|----------------|
+| `$XDG_STATE_HOME/omarchy-roon/` | The virtualenv, the Roon auth token (`session.json`, mode 0600), the recently-played log and the favourites list |
+| `~/.config/omarchy-roon/endpoints.json` | Zone-to-speaker overrides, only if you wrote one |
+| `~/.config/hypr/bindings.conf` | The two keybindings, only if you ran `omarchy-roon keybindings --install` |
+
+To remove those as well:
+
+```sh
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-roon"
+rm -f  "$HOME/.config/omarchy-roon/endpoints.json"
+```
+
+Finally, the extension stays registered on the core until you say otherwise:
+**Roon → Settings → Extensions → Omarchy → Remove**. Deleting the plugin from
+this machine cannot do that for you — the authorisation lives on the core.
+
+Nothing else on the system is touched. The plugin writes no system files, adds
+no services, and never uses `sudo`.
+
 ### Keybindings
 
 Media keys work already. These are optional, for the two surfaces:
@@ -516,7 +546,7 @@ anything that lands wrong or is invisible to SSDP, pin it by hand in
 `~/.config/omarchy-roon/endpoints.json`:
 
 ```json
-{ "Bedroom speaker": "172.16.11.31" }
+{ "Bedroom speaker": "192.168.1.31" }
 ```
 
 Run the prober standalone to see what your network yields:
