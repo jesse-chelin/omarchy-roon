@@ -29,6 +29,8 @@ import time
 from roonapi.constants import SERVICE_TRANSPORT
 
 import endpoints as endpoint_probes
+import lan
+import safeio
 
 # Optional, and it says so. MPRIS is the best thing this plugin does, but it
 # is not the thing it is for — a missing or broken jeepney must cost you the
@@ -55,7 +57,7 @@ FAVOURITES_LIMIT = 500
 APPINFO = {
     "extension_id": "org.omarchy.roon",
     "display_name": "Omarchy",
-    "display_version": "1.0.0",
+    "display_version": "1.0.1",
     "publisher": "Omarchy Roon plugin",
     "email": "none@example.com",
 }
@@ -208,6 +210,7 @@ def clean_text(value):
 
 # Roon's browse hierarchy pages; 100 is what the official clients use.
 PAGE_SIZE = 100
+ROON_API_PORT = 9330
 
 # A level at or under this many rows is pulled in full, in one extra request,
 # straight after the first page. Below it the browser holds the whole level:
@@ -244,22 +247,17 @@ def log(*parts) -> None:
 
 def load_session() -> dict:
     try:
-        with open(SESSION_FILE, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+        data = safeio.read_json(SESSION_FILE, default={})
+    except safeio.UnsafePath as exc:
+        log("refusing to read the session: %s" % exc)
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def save_session(session: dict) -> None:
-    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
-    tmp = SESSION_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(session, handle, indent=2)
-        handle.write("\n")
-    # The token is a credential for the core; keep it to the owning user.
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, SESSION_FILE)
+    # The token is a credential for the core. 0600 at creation, not by a chmod
+    # after the bytes are already on disk.
+    safeio.write_json_private(SESSION_FILE, session)
 
 
 # ----------------------------------------------------------- serialization
@@ -412,6 +410,9 @@ class RoonBackend:
         self._history = None
         self._favourites = None
         self._history_enabled = True
+        # Sweeping the LAN is a fallback, and a fallback the user can
+        # decline. Same standing as the endpoint prober.
+        self._sweep_enabled = True
         self.mpris = None
         self._mpris_zone = None
         self._mpris_pinned = ""
@@ -440,7 +441,23 @@ class RoonBackend:
             finally:
                 discovery.stop()
 
+        if not host and self._sweep_enabled:
+            # Discovery is a broadcast whose reply lands on a random port, and
+            # Omarchy ships ufw with `default deny incoming` on every install,
+            # so on the distribution this plugin targets the reply is usually
+            # dropped. Outbound TCP is permitted by the same firewall, so look
+            # for the core directly. Only on this path, never routinely.
+            emit({"type": "status", "state": "discovering",
+                  "message": "No broadcast answer; looking for the core directly"})
+            found = lan.find_cores()
+            if found:
+                host, port = found[0], ROON_API_PORT
+                log("discovery fell back to a direct sweep: found %s" % host)
+
         if not host:
+            hint = lan.firewall_hint()
+            if hint:
+                return "No Roon core found. " + hint
             return "No Roon core found. Set the core host in the widget settings."
 
         port = port or 9330
@@ -1174,25 +1191,24 @@ class RoonBackend:
         if self._history is not None:
             return self._history
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except (OSError, ValueError):
+            data = safeio.read_json(HISTORY_FILE, default=[])
+        except safeio.UnsafePath as exc:
+            log("refusing to read the history: %s" % exc)
             data = []
         self._history = self._normalise_history(data if isinstance(data, list) else [])
         return self._history
 
     def _save_history(self):
-        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
-        tmp = HISTORY_FILE + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as handle:
-                json.dump(self._history[:HISTORY_LIMIT], handle)
-            os.replace(tmp, HISTORY_FILE)
+            safeio.write_json_private(HISTORY_FILE, self._history[:HISTORY_LIMIT])
         except OSError as exc:
             log("history save failed: %r" % exc)
 
     def set_history_enabled(self, on):
         self._history_enabled = bool(on)
+
+    def set_sweep_enabled(self, on):
+        self._sweep_enabled = bool(on)
 
     def record_history(self, zone):
         """Fold a track into its album's entry, moving that album to the top."""
@@ -1259,9 +1275,9 @@ class RoonBackend:
         if self._favourites is not None:
             return self._favourites
         try:
-            with open(FAVOURITES_FILE, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except (OSError, ValueError):
+            data = safeio.read_json(FAVOURITES_FILE, default=[])
+        except safeio.UnsafePath as exc:
+            log("refusing to read the favourites: %s" % exc)
             data = []
         rows = []
         for entry in data if isinstance(data, list) else []:
@@ -1278,12 +1294,8 @@ class RoonBackend:
         return rows
 
     def _save_favourites(self):
-        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
-        tmp = FAVOURITES_FILE + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as handle:
-                json.dump(self._favourites[:FAVOURITES_LIMIT], handle)
-            os.replace(tmp, FAVOURITES_FILE)
+            safeio.write_json_private(FAVOURITES_FILE, self._favourites[:FAVOURITES_LIMIT])
         except OSError as exc:
             log("favourites save failed: %r" % exc)
 
@@ -1881,6 +1893,7 @@ HANDLERS = {
     "history":     lambda b, c: b.emit_history(),
     "history_clear": lambda b, c: b.clear_history(),
     "history_enabled": lambda b, c: b.set_history_enabled(c.get("on", True)),
+    "sweep_enabled": lambda b, c: b.set_sweep_enabled(c.get("on", True)),
     "favourites":  lambda b, c: b.emit_favourites(),
     "favourite_toggle": lambda b, c: b.favourite_toggle(
         c.get("album", ""), c.get("artist", ""), c.get("art", "")),
@@ -1934,6 +1947,8 @@ def main() -> int:
                         help="serve fabricated state; for UI work without a core")
     parser.add_argument("--no-mpris", action="store_true",
                         help="do not publish the active zone on D-Bus as an MPRIS player")
+    parser.add_argument("--no-discovery-sweep", action="store_true",
+                        help="never look for the core by connecting to hosts on the LAN")
     parser.add_argument("--no-endpoints", action="store_true",
                         help="skip asking audio endpoints what they are decoding")
     parser.add_argument("--mock-state", default="ready",
@@ -1951,6 +1966,9 @@ def main() -> int:
         else:
             backend.mpris = MprisService(backend.mpris_command, backend.mpris_zone, log)
             backend.mpris.start()
+
+    if args.no_discovery_sweep:
+        backend.set_sweep_enabled(False)
 
     if not args.mock and not args.no_endpoints:
         backend.endpoints = EndpointWatcher(backend)

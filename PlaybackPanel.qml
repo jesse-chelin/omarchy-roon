@@ -782,6 +782,18 @@ Item {
 
       Toggle {
         width: parent.width
+        label: "Find the core by scanning the network"
+        description: "Only when the broadcast search fails, which ufw usually blocks."
+        checked: root.widget ? root.widget.discoverySweepSetting : true
+        foreground: root.fg
+        accent: Color.accent
+        fontFamily: root.fontFamily
+        titleSize: Style.font.bodySmall
+        onClicked: root.setSetting("discoverySweep", !checked)
+      }
+
+      Toggle {
+        width: parent.width
         label: "Close the browser after playing"
         description: "Picking Play now dismisses the library."
         checked: root.widget ? root.widget.closeAfterActionSetting : true

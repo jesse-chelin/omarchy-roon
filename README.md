@@ -88,6 +88,7 @@ in `~/.config/omarchy/shell.json` and can also be edited there directly.
 | `reduceMotion` | `false` | Stop the marquee, pulses and fades. |
 | `keepHistory` | `true` | Keep the recently-played log and favourites. |
 | `volumeOsd` | `true` | Show volume changes on Omarchy's OSD. |
+| `discoverySweep` | `true` | If the broadcast search fails, look for the core by connecting to port 9330 on hosts in your own subnet. |
 | `trackOsd` | `false` | Show an OSD on every track change. |
 
 Set `core` when discovery fails. Roon uses multicast, which does not cross
@@ -192,7 +193,31 @@ Anything labelled "this plugin's own" will not appear in the Roon app.
 **`roonapisocket -- Connection is not (yet) ready!` at startup.** Harmless.
 The bridge works around it.
 
-**No core found.** Set `core` to the address. Discovery uses multicast.
+**No core found, and the core is on another machine.** Almost always ufw.
+Omarchy enables it with `default deny incoming` on every install. Roon answers
+the discovery broadcast from port 9003, but the reply arrives on a random
+ephemeral port, so `default deny incoming` drops it.
+
+The obvious rule does not work:
+
+```sh
+sudo ufw allow 9003/udp        # opens the DESTINATION port. The reply is not addressed to it.
+```
+
+Allow it by source port instead:
+
+```sh
+sudo ufw allow proto udp from 192.168.1.0/24 port 9003
+```
+
+Or skip discovery entirely by setting `core` to the address.
+
+Since 1.0.1 the plugin also looks for the core directly when the broadcast gets
+no answer, which works through the firewall because outbound TCP is permitted.
+That covers the common case without any rule. See `discoverySweep` above and
+the Security section below.
+
+**No core found, on the same machine as the core.** Set `core` to `localhost`.
 
 **Wrong speaker matched for the output format.** Zones are matched to devices
 by name. Override it in `~/.config/omarchy-roon/endpoints.json`:
@@ -248,11 +273,22 @@ and that competition caused three separate bugs.
 
 The plugin runs unsandboxed, like every Omarchy plugin. It:
 
-- stores a Roon auth token at `$XDG_STATE_HOME/omarchy-roon/session.json`, mode 0600
+- stores a Roon auth token at `$XDG_STATE_HOME/omarchy-roon/session.json`. That
+  file is 0600 and the directory is 0700, both set explicitly rather than left
+  to the umask. The history and favourites files are 0600 as well.
 - makes HTTP requests to audio devices on the local network when
-  `showOutputFormat` is on
+  `showOutputFormat` is on. Responses are capped at 256 KiB.
+- opens TCP connections to port 9330 on hosts in your own subnet, but only when
+  the broadcast search has already failed and only on directly attached /24s or
+  smaller. One pass, 350ms per host, no retries. Turn it off with
+  `discoverySweep` if you would rather set the core address by hand.
 - publishes an MPRIS player on the session bus
-- installs three pinned Python packages from PyPI into a private virtualenv
+- installs a hash-pinned set of Python packages from PyPI into a private
+  virtualenv (`bridge/requirements.lock`)
+
+Its own state files are read without following symlinks and with a size limit,
+and written through an unpredictable temporary name that is private before it
+holds any bytes.
 
 It does not use `sudo`, write system files, install services, or send anything
 off the local network.

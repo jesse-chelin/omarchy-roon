@@ -14,7 +14,10 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: a moving image means a green run proves
+    # nothing about the next one, and the marketplace review calls that
+    # mutable evidence.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +27,10 @@ jobs:
 
       # roonapi is the bridge's only third-party dependency, and importing the
       # module needs it even for tests that never reach the network.
-      - name: Install the bridge's dependency
-        run: python3 -m pip install --quiet roonapi
+      # The same versions the plugin's own venv installs, so CI tests what
+      # ships rather than whatever PyPI resolved this morning.
+      - name: Install the bridge's dependencies
+        run: python3 -m pip install --quiet --require-hashes -r bridge/requirements.lock
 
       # qmltestrunner, plus the modules our tests import *and* the ones
       # QtTest's own TestCase.qml pulls in — QtQuick.Window is one of those,
@@ -33,12 +38,15 @@ jobs:
       - name: Install Qt 6 QML tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
+          sudo apt-get install -y -qq --no-install-recommends \
             qt6-declarative-dev-tools \
             qml6-module-qtquick \
             qml6-module-qtquick-window \
             qml6-module-qttest \
             qml6-module-qtqml-workerscript
+          # Record exactly what was installed, so a future failure can be
+          # compared against a run that worked.
+          dpkg -l | grep -E 'qt6|qml6' | awk '{print $2, $3}'
 
       - name: check.sh
         env:

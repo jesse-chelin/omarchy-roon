@@ -40,9 +40,14 @@ Item {
   // screen, and the only feedback is the music itself. On by default for that
   // reason. Track changes are the opposite — an OSD on every track all day is
   // a thing you would want to turn off, so it starts off.
+  // Looking for the core by connecting to hosts on the LAN. Only ever on the
+  // path where broadcast discovery already failed, and declinable.
+  property bool discoverySweep: true
+
   property bool volumeOsd: true
   property bool trackOsd: false
   onKeepHistoryChanged: send({ cmd: "history_enabled", on: keepHistory })
+  onDiscoverySweepChanged: send({ cmd: "sweep_enabled", on: discoverySweep })
   onShowOutputFormatChanged: if (bridge.running) restart()
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.jesse-chelin.roon"

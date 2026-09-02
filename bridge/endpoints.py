@@ -34,6 +34,8 @@ import urllib.parse
 import urllib.request
 from xml.etree import ElementTree as ET
 
+import safeio
+
 CONFIG_DIR = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "omarchy-roon"
 )
@@ -72,11 +74,26 @@ def _codec_name(value: str | None) -> str:
     return CODECS.get(token, token.upper() if len(token) <= 5 else "")
 
 
+# These are speakers on someone's network, not a service we control. A device
+# that is broken, hostile, or merely streaming will happily answer with more
+# bytes than we can hold, so the cap belongs here at the producer rather than in
+# whatever parses the result.
+MAX_RESPONSE_BYTES = 256 * 1024
+
+
+def _bounded(response) -> str:
+    """Read at most MAX_RESPONSE_BYTES from an untrusted endpoint."""
+    raw = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise ValueError("response exceeded %d bytes" % MAX_RESPONSE_BYTES)
+    return raw.decode("utf-8", "replace")
+
+
 def _http(url: str, timeout=HTTP_TIMEOUT, insecure=False) -> str:
     ctx = ssl._create_unverified_context() if insecure else None
     req = urllib.request.Request(url, headers=_UA)
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as response:
-        return response.read().decode("utf-8", "replace")
+        return _bounded(response)
 
 
 def _num(value) -> int:
@@ -317,7 +334,7 @@ def _didl_from_soap(host: str, control_url: str, action: str) -> str:
         },
     )
     with urllib.request.urlopen(request, timeout=3) as response:
-        return response.read().decode("utf-8", "replace")
+        return _bounded(response)
 
 
 def probe_upnp(device: Device) -> dict | None:
@@ -400,13 +417,12 @@ def _normalise(value: str) -> str:
 
 
 def load_overrides() -> dict:
-    """Manual zone-name → host map, for anything discovery cannot place."""
+    """Manual zone-name to host map, for anything discovery cannot place."""
     try:
-        with open(OVERRIDE_FILE, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+        data = safeio.read_json(OVERRIDE_FILE, default={})
+    except safeio.UnsafePath:
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def match_device(zone_name: str, devices: list[Device], overrides: dict | None = None):

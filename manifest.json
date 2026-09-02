@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jesse-chelin.roon",
   "name": "Roon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Jesse Chelin",
   "license": "MIT",
   "description": "Browse and control a Roon core from the Omarchy bar",
@@ -34,7 +34,8 @@
       "reduceMotion": false,
       "keepHistory": true,
       "volumeOsd": true,
-      "trackOsd": false
+      "trackOsd": false,
+      "discoverySweep": true
     },
     "schema": [
       {
@@ -91,6 +92,11 @@
         "key": "trackOsd",
         "type": "boolean",
         "label": "Show an OSD when the track changes"
+      },
+      {
+        "key": "discoverySweep",
+        "type": "boolean",
+        "label": "If the broadcast search fails, look for the core by connecting to hosts on your network"
       }
     ]
   }

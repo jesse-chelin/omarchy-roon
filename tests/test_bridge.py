@@ -16,7 +16,9 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bridge"))
 
+import lan  # noqa: E402
 import roon_bridge as rb  # noqa: E402
+import safeio  # noqa: E402
 
 
 class Initial(unittest.TestCase):
@@ -393,6 +395,102 @@ class Breadcrumbs(unittest.TestCase):
 
     def test_non_adjacent_repeats_are_left_alone(self):
         self.assertEqual(rb._dedupe_adjacent(["A", "B", "A"]), ["A", "B", "A"])
+
+
+
+
+class SafeStateIO(unittest.TestCase):
+    """The state directory holds an auth token and a listening log, in a
+    world-traversable parent. The first version of this got three of four
+    wrong: a 0755 directory because makedirs is masked by umask, 0644 files,
+    and a predictable temp name with no fsync."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "state.json")
+
+    def test_a_written_file_is_private_at_creation(self):
+        safeio.write_json_private(self.path, {"token": "secret"})
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_the_directory_is_really_private(self):
+        # os.makedirs(mode=0o700) yields 0755 under the usual 0022 umask.
+        nested = os.path.join(self.dir, "deeper")
+        safeio.ensure_private_dir(nested)
+        self.assertEqual(os.stat(nested).st_mode & 0o777, 0o700)
+
+    def test_it_round_trips(self):
+        safeio.write_json_private(self.path, {"a": [1, 2, 3]})
+        self.assertEqual(safeio.read_json(self.path), {"a": [1, 2, 3]})
+
+    def test_no_temp_file_is_left_behind(self):
+        safeio.write_json_private(self.path, {"a": 1})
+        self.assertEqual(os.listdir(self.dir), ["state.json"])
+
+    # A local foothold that plants a symlink must not redirect our read.
+    def test_a_symlink_is_refused(self):
+        target = os.path.join(self.dir, "real.json")
+        io_open = open(target, "w")
+        io_open.write('{"a": 1}')
+        io_open.close()
+        link = os.path.join(self.dir, "link.json")
+        os.symlink(target, link)
+        with self.assertRaises(safeio.UnsafePath):
+            safeio.read_json(link)
+
+    def test_an_oversized_file_is_refused_rather_than_parsed(self):
+        with open(self.path, "w") as handle:
+            handle.write("[" + ",".join(['"x"'] * 200000) + "]")
+        with self.assertRaises(safeio.UnsafePath):
+            safeio.read_json(self.path, limit=1024)
+
+    # Hardening the write path does nothing for files an earlier version left
+    # behind at 0644, so opening one repairs it.
+    def test_reading_repairs_a_file_left_world_readable(self):
+        with open(self.path, "w") as handle:
+            handle.write('{"a": 1}')
+        os.chmod(self.path, 0o644)
+        self.assertEqual(safeio.read_json(self.path), {"a": 1})
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_a_missing_or_corrupt_file_gives_the_default(self):
+        self.assertEqual(safeio.read_json(self.path, default=[]), [])
+        with open(self.path, "w") as handle:
+            handle.write("{not json")
+        self.assertEqual(safeio.read_json(self.path, default=[]), [])
+
+
+class LanFallback(unittest.TestCase):
+    """Omarchy ships ufw with `default deny incoming`, and Roon's discovery
+    reply arrives on a random port, so on a stock install it is dropped."""
+
+    def test_only_directly_attached_subnets_are_swept(self):
+        nets = lan.connected_subnets()
+        for cidr in nets:
+            net = __import__("ipaddress").ip_network(cidr)
+            self.assertFalse(net.is_loopback)
+            self.assertLessEqual(net.num_addresses, lan.MAX_HOSTS,
+                                 "a prefix this large is a port scan")
+
+    # A /16 is 65,000 connections. That is not a fallback.
+    def test_an_oversized_prefix_is_not_swept(self):
+        self.assertEqual(lan.find_cores(subnets=["10.0.0.0/8"], timeout=0.01), [])
+
+    def test_no_subnets_means_no_sweep(self):
+        self.assertEqual(lan.find_cores(subnets=[], timeout=0.01), [])
+
+    def test_a_malformed_subnet_is_ignored(self):
+        self.assertEqual(lan.find_cores(subnets=["not-a-network"], timeout=0.01), [])
+
+    # The advice everyone reaches for opens the destination port, and the reply
+    # is addressed to a random one, so the hint has to name the source-port form.
+    def test_the_firewall_hint_gives_the_rule_that_works(self):
+        hint = lan.firewall_hint()
+        if not hint:
+            self.skipTest("ufw is not active on this machine")
+        self.assertIn("proto udp", hint)
+        self.assertIn("port %d" % lan.SOOD_PORT, hint)
 
 
 if __name__ == "__main__":
