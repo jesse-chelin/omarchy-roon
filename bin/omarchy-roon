@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Thin CLI over the running shell's Roon service.
+#
+# Every subcommand is an IPC call into omarchy-shell, so it drives the same
+# connection the bar widget uses — no second Roon session, no second token.
+
+set -euo pipefail
+
+usage() {
+  cat <<USAGE
+Usage: omarchy-roon <command> [args]
+
+  status              print the active zone as JSON
+  zones               list zone names, one per line
+  zones-json          full zone state as JSON
+  play-pause          toggle playback on the active zone
+  next | previous     skip within the active zone
+  volume-up|-down     nudge the active zone's volume by 5%
+  mute                toggle mute on the active zone
+  zone <name>         make <name> the active zone
+  panel               open the now-playing panel
+  browse              open the fullscreen library browser
+  search <text>       search the library and streaming catalogue
+  history             recently played, as JSON
+  restart             restart the Roon bridge process
+  keybindings         show the optional Hyprland bindings (--install to add them)
+  install             (re)build the bridge virtualenv
+USAGE
+}
+
+PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+case "${1:-}" in
+  status)       omarchy-shell roon status ;;
+  zones)        omarchy-shell roon zones ;;
+  zones-json)   omarchy-shell roon zonesJson ;;
+  play-pause)   omarchy-shell roon playPause ;;
+  next)         omarchy-shell roon next ;;
+  previous)     omarchy-shell roon previous ;;
+  volume-up)    omarchy-shell roon volumeUp ;;
+  volume-down)  omarchy-shell roon volumeDown ;;
+  mute)         omarchy-shell roon mute ;;
+  zone)         omarchy-shell roon selectZone "${2:?zone name required}" ;;
+  panel)        omarchy-shell roon panel ;;
+  browse)       omarchy-shell roon-browser toggle ;;
+  search)       omarchy-shell roon-browser open >/dev/null
+                omarchy-shell roon search "${2:?search text required}" ;;
+  history)      omarchy-shell roon historyJson ;;
+  restart)      omarchy-shell roon restart ;;
+  keybindings)  BINDINGS="$HOME/.config/hypr/bindings.conf"
+                LINES=$'\n# Roon\nbindd = SUPER, R, Roon library, exec, omarchy-shell roon-browser toggle\nbindd = SUPER SHIFT, R, Roon panel, exec, omarchy-shell roon panel'
+                if [[ ${2:-} == --install ]]; then
+                  if grep -q "roon-browser toggle" "$BINDINGS" 2>/dev/null; then
+                    echo "Already present in $BINDINGS"
+                  else
+                    printf '%s\n' "$LINES" >> "$BINDINGS"
+                    echo "Added to $BINDINGS"
+                  fi
+                else
+                  echo "Media keys already work — Roon publishes itself over MPRIS."
+                  echo "These are only for the library browser and the panel:"
+                  printf '%s\n' "$LINES"
+                  echo
+                  echo "Add them with: omarchy-roon keybindings --install"
+                fi ;;
+  install)      exec "$PLUGIN_DIR/install.sh" ;;
+  -h|--help|"") usage ;;
+  *)            usage >&2; exit 1 ;;
+esac

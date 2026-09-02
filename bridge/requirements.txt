@@ -1,0 +1,8 @@
+# Pinned exactly, not floated. The bridge calls RoonApi._get_zones() and
+# _get_outputs() to work around pyroon seeding its state before the socket
+# registers, and pyroon in turn depends on websocket-client's callback
+# signatures — a disconnect against a newer websocket-client already raised
+# AttributeError inside roonapisocket.on_message. Both are load-bearing.
+roonapi==0.1.6
+websocket-client==1.9.2
+jeepney==0.9.0

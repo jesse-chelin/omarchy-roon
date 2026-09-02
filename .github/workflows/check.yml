@@ -1,0 +1,43 @@
+# Everything check.sh can verify without a Roon core on the machine.
+#
+# The script is the single entry point on purpose: what runs here and what a
+# developer runs locally are the same commands, so CI cannot drift into
+# testing something else. Steps that need the Omarchy shell or the `omarchy`
+# CLI skip themselves when those are absent, which is exactly the case here —
+# what remains is the QML unit tests, both structural guards, and the Python.
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # roonapi is the bridge's only third-party dependency, and importing the
+      # module needs it even for tests that never reach the network.
+      - name: Install the bridge's dependency
+        run: python3 -m pip install --quiet roonapi
+
+      # qmltestrunner plus the QtQuick and QtTest modules the tests import.
+      - name: Install Qt 6 QML tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            qt6-declarative-dev-tools \
+            qml6-module-qtquick \
+            qml6-module-qttest \
+            qml6-module-qtqml-workerscript
+
+      - name: check.sh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./check.sh

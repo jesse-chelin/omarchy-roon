@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jesse-chelin.roon",
+  "name": "Roon",
+  "version": "0.1.0",
+  "author": "Jesse Chelin",
+  "license": "MIT",
+  "description": "Browse and control a Roon core from the Omarchy bar",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Browser.qml"
+  },
+  "barWidget": {
+    "displayName": "Roon",
+    "description": "Roon now-playing with transport, zone and volume control",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "core": "",
+      "maxLabelWidth": 200,
+      "showWhenIdle": false,
+      "closeBrowserAfterAction": true,
+      "showOutputFormat": true,
+      "showProgress": true,
+      "showArtInBar": true,
+      "reduceMotion": false,
+      "keepHistory": true
+    },
+    "schema": [
+      {
+        "key": "core",
+        "type": "string",
+        "label": "Core host (blank = auto-discover)"
+      },
+      {
+        "key": "maxLabelWidth",
+        "type": "number",
+        "label": "Max label width (px)"
+      },
+      {
+        "key": "showWhenIdle",
+        "type": "boolean",
+        "label": "Show the track name in the bar when nothing is playing"
+      },
+      {
+        "key": "closeBrowserAfterAction",
+        "type": "boolean",
+        "label": "Close the browser after Play Now / Queue"
+      },
+      {
+        "key": "showOutputFormat",
+        "type": "boolean",
+        "label": "Ask endpoints for the stream format (LAN queries)"
+      },
+      {
+        "key": "showProgress",
+        "type": "boolean",
+        "label": "Show a progress line under the bar label"
+      },
+      {
+        "key": "showArtInBar",
+        "type": "boolean",
+        "label": "Show album art in the bar"
+      },
+      {
+        "key": "reduceMotion",
+        "type": "boolean",
+        "label": "Reduce motion (stop marquee, pulses and fades)"
+      },
+      {
+        "key": "keepHistory",
+        "type": "boolean",
+        "label": "Keep a local Recently played log"
+      }
+    ]
+  }
+}
