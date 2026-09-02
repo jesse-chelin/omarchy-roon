@@ -29,10 +29,15 @@ Item {
   readonly property int volumePercent: service && zone ? service.volumePercentFor(zone) : -1
   readonly property bool muted: Model.zoneMuted(zone)
 
-  // Bounded rather than proportional at the extremes: below ~700px the middle
-  // block runs out of room for a seek bar before the sides run out of text.
-  readonly property int sideWidth: Math.max(Style.space(180),
-    Math.min(Style.space(300), Math.round(width * 0.30)))
+  // The middle is fixed and centred on the bar rather than wedged between
+  // whatever the two sides happen to measure. That inversion is the whole
+  // trick: the seek bar cannot move, so the sides no longer have to hold a
+  // rigid width to keep it still — which is what was leaving seventy pixels
+  // of nothing beside a short room name like "WIIM".
+  readonly property int centreWidth: Math.max(Style.space(260),
+    Math.min(Style.space(470), Math.round(width * 0.46)))
+  readonly property int flankWidth: Math.max(Style.space(120),
+    Math.round((width - centreWidth) / 2) - Style.space(14))
 
   implicitHeight: Math.max(Style.space(48), artSize + Style.space(8))
 
@@ -41,7 +46,7 @@ Item {
     id: leftBlock
     anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
-    width: root.sideWidth
+    width: root.flankWidth
     spacing: Style.space(9)
 
     Rectangle {
@@ -71,17 +76,46 @@ Item {
 
       // A toast lands here rather than displacing a control. It is about the
       // music, it belongs with the music, and nothing moves while it shows.
-      Text {
+      // Elided at rest, scrolling under the pointer — the same treatment the
+      // bar item gets, and what lets this block be narrow enough to leave the
+      // seek bar room. A permanent marquee spends most of its cycle showing
+      // empty space, which is worse than an ellipsis.
+      Item {
+        id: titleClip
         width: parent.width
-        // Silent when there is no zone: the setup card above is already
-        // saying what is happening, and a second, shorter, less accurate
-        // version of it in the corner only contradicts it.
-        text: root.b.toast !== "" ? root.b.toast
-          : (root.live ? root.zone.title : (root.b.ready ? "Nothing playing" : ""))
-        color: root.b.toast !== "" ? Color.accent : Qt.darker(root.b.foreground, 1.15)
-        font.family: root.b.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        elide: Text.ElideRight
+        height: title.implicitHeight
+        clip: true
+
+        readonly property bool overflows: title.implicitWidth > width
+        readonly property bool scrolling: titleHover.hovered && overflows
+          && !root.b.reduceMotion
+
+        Text {
+          id: title
+          // Silent when there is no zone: the setup card above is already
+          // saying what is happening, and a second, shorter, less accurate
+          // version of it in the corner only contradicts it.
+          text: root.b.toast !== "" ? root.b.toast
+            : (root.live ? root.zone.title : (root.b.ready ? "Nothing playing" : ""))
+          color: root.b.toast !== "" ? Color.accent : Qt.darker(root.b.foreground, 1.15)
+          font.family: root.b.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          width: titleClip.scrolling ? implicitWidth : titleClip.width
+          elide: titleClip.scrolling ? Text.ElideNone : Text.ElideRight
+
+          NumberAnimation on x {
+            running: titleClip.scrolling
+            loops: Animation.Infinite
+            duration: Math.max(5000, title.implicitWidth * 22)
+            from: 0
+            to: -title.implicitWidth
+            easing.type: Easing.Linear
+          }
+
+          onXChanged: if (!titleClip.scrolling && x !== 0) x = 0
+        }
+
+        HoverHandler { id: titleHover }
       }
 
       Text {
@@ -98,26 +132,24 @@ Item {
 
   // -- how loud, and where -------------------------------------------------
   //
-  // Fixed width, every part of it. Room names vary — "WIIM" and "Media Room -
-  // Sonos" differ by ninety pixels — and this block anchors the right edge of
-  // the seek bar, so a name that sized itself made the seek bar jump every
-  // time you changed rooms. The room sits last and elides into its lane.
-  Row {
+  // Stacked and right-aligned, which is the only arrangement where a room name
+  // cannot move anything. Side by side, a name three times longer than "WIIM"
+  // either drags the volume across the bar or sits in a fixed lane with fifty
+  // pixels of nothing beside it. On its own row it can be as long as it likes:
+  // it grows leftward into empty space and stops at the ellipsis.
+  Column {
     id: rightBlock
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
-    spacing: Style.space(16)
-    width: volumeGroup.width + spacing + roomLane.width
+    spacing: Style.space(3)
 
     Row {
       id: volumeGroup
+      anchors.right: parent.right
       spacing: Style.space(7)
-      width: root.volumePercent >= 0
-        ? glyph.width + spacing + slider.width + spacing + readout.width : 0
       visible: root.volumePercent >= 0
 
       Text {
-        id: glyph
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(16)
         text: root.muted ? Model.GLYPH.muted : Model.GLYPH.volume
@@ -134,7 +166,6 @@ Item {
       }
 
       PanelSlider {
-        id: slider
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(96)
         trackColor: Style.selectedFillFor(root.b.foreground, Color.accent)
@@ -152,7 +183,6 @@ Item {
       }
 
       Text {
-        id: readout
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(28)
         horizontalAlignment: Text.AlignRight
@@ -166,28 +196,22 @@ Item {
     // The active room: the most consequential piece of state in a multi-room
     // product, so it gets one unmistakable place per surface, and that place
     // is the one you press to change it.
-    Item {
-      id: roomLane
-      anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(104)
-      height: room.implicitHeight
+    Text {
+      id: room
+      anchors.right: parent.right
+      visible: root.live
+      width: Math.min(implicitWidth, root.flankWidth)
+      horizontalAlignment: Text.AlignRight
+      text: Model.GLYPH.speaker + "  " + Model.zoneLabel(root.zone)
+      color: Color.accent
+      font.family: root.b.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
 
-      Text {
-        id: room
+      MouseArea {
         anchors.fill: parent
-        visible: root.live
-        text: Model.GLYPH.speaker + "  " + Model.zoneLabel(root.zone)
-        color: Color.accent
-        font.family: root.b.fontFamily
-        font.pixelSize: Style.font.caption
-        elide: Text.ElideRight
-        verticalAlignment: Text.AlignVCenter
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.b.cycleZone()
-        }
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.b.cycleZone()
       }
     }
   }
@@ -195,10 +219,8 @@ Item {
   // -- what you do to it ---------------------------------------------------
   Column {
     id: centreBlock
-    anchors.left: leftBlock.right
-    anchors.right: rightBlock.left
-    anchors.leftMargin: root.b.gap
-    anchors.rightMargin: root.b.gap
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: root.centreWidth
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(2)
     visible: root.live
