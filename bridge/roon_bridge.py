@@ -55,7 +55,7 @@ FAVOURITES_LIMIT = 500
 APPINFO = {
     "extension_id": "org.omarchy.roon",
     "display_name": "Omarchy",
-    "display_version": "0.1.0",
+    "display_version": "1.0.0",
     "publisher": "Omarchy Roon plugin",
     "email": "none@example.com",
 }

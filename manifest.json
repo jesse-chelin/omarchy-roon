@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jesse-chelin.roon",
   "name": "Roon",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "Jesse Chelin",
   "license": "MIT",
   "description": "Browse and control a Roon core from the Omarchy bar",
