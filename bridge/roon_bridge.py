@@ -507,6 +507,45 @@ class RoonBackend:
             self.endpoints.notify()
         return None
 
+    def api_healthy(self):
+        """Whether the core is still answering.
+
+        pyroon flips `ready` off when its socket drops and tries to bring it
+        back on its own; if it succeeds this never fires, and if it does not
+        the supervisor below takes over.
+        """
+        api = self._api
+        return api is not None and bool(getattr(api, "ready", False))
+
+    def drop_connection(self, reason):
+        """Let go of a core that has gone away, and say so.
+
+        Everything the plugin holds is keyed to the session that just ended.
+        Browse item_keys are minted per level and are dead the moment the core
+        restarts; the queue subscriptions are registered against a socket that
+        no longer exists; and the zone list describes a state nobody is in any
+        more. Keeping any of it would make the next connection lie.
+        """
+        api, self._api = self._api, None
+        if api is not None:
+            try:
+                api.stop()
+            except Exception as exc:  # noqa: BLE001
+                log("stopping the old connection failed: %r" % exc)
+
+        self._levels = []
+        self._roots = []
+        self._queue_subs = set()
+        self._queues = {}
+        self._last_titles = {}
+        emit({"type": "zones", "zones": []})
+        emit({"type": "status", "state": "error", "message": reason})
+        if self.mpris:
+            try:
+                self.mpris.update(None)
+            except Exception as exc:  # noqa: BLE001
+                log("mpris teardown failed: %r" % exc)
+
     @staticmethod
     def _seed_state(api):
         """Re-fetch the full zone/output snapshot now that the socket is up.
@@ -1950,29 +1989,60 @@ def main() -> int:
     return 0
 
 
-def _connect_guarded(backend) -> None:
-    """Keep trying to reach a core, backing off between attempts.
+HEALTH_INTERVAL = 5
+
+
+def _connect_guarded(backend, health_interval=HEALTH_INTERVAL) -> None:
+    """Keep a core connected, for as long as the bridge is running.
 
     A core that is merely asleep, still booting, or on a network the laptop
     has not joined yet is the normal case, not an error to give up on. The
     bridge stays alive either way, so retrying here is cheaper than making
     the user restart the shell.
+
+    This used to return the moment it first succeeded, which made a Roon core
+    that restarted — an update, a reboot, a Nucleus power-cycled — permanently
+    fatal to a running plugin: no reconnect, no error, and a widget that went
+    on looking connected while every command it sent went nowhere. So the loop
+    does not end at the first success; it supervises.
     """
     delay = 15
     while not backend.stopped:
         try:
             reason = backend.connect()
-            if reason is None:
-                return
         except Exception as exc:  # noqa: BLE001
             log("connect failed: %r" % exc)
             reason = str(exc)
+
+        if reason is None:
+            delay = 15
+            _watch_connection(backend, health_interval)
+            if backend.stopped:
+                return
+            # Straight back round: a core that has just restarted is usually
+            # seconds from answering, and this is the one case where waiting
+            # fifteen seconds is felt.
+            continue
+
         if backend.stopped:
             return
         emit({"type": "status", "state": "error",
               "message": "%s (retrying in %ds)" % (reason, delay)})
         time.sleep(delay)
         delay = min(delay * 2, 300)
+
+
+def _watch_connection(backend, health_interval=HEALTH_INTERVAL) -> None:
+    """Block until the core stops answering, then let go of it."""
+    while not backend.stopped:
+        time.sleep(health_interval)
+        if backend.stopped:
+            return
+        if backend.api_healthy():
+            continue
+        log("core stopped answering; reconnecting")
+        backend.drop_connection("Lost the Roon core — reconnecting")
+        return
 
 
 if __name__ == "__main__":

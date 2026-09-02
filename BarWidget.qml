@@ -36,6 +36,8 @@ BarWidget {
   readonly property bool outputFormatSetting: setting("showOutputFormat", true)
   readonly property bool reduceMotionSetting: setting("reduceMotion", false)
   readonly property bool keepHistorySetting: setting("keepHistory", true)
+  readonly property bool volumeOsdSetting: setting("volumeOsd", true)
+  readonly property bool trackOsdSetting: setting("trackOsd", false)
   readonly property string outputFormat: service ? service.outputFormat(zone) : ""
   readonly property string outputDevice: service ? service.outputDevice(zone) : ""
   readonly property var zoneOutputs: zone && zone.outputs ? zone.outputs : []
@@ -117,6 +119,8 @@ BarWidget {
     service.showOutputFormat = outputFormatSetting
     service.reduceMotion = reduceMotionSetting
     service.keepHistory = keepHistorySetting
+    service.volumeOsd = volumeOsdSetting
+    service.trackOsd = trackOsdSetting
   }
 
   onServiceChanged: pushSettings()
@@ -125,6 +129,8 @@ BarWidget {
   onOutputFormatSettingChanged: pushSettings()
   onReduceMotionSettingChanged: pushSettings()
   onKeepHistorySettingChanged: pushSettings()
+  onVolumeOsdSettingChanged: pushSettings()
+  onTrackOsdSettingChanged: pushSettings()
 
   readonly property bool needsSetup: !service || !service.ready
 

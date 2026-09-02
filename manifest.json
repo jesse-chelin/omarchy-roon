@@ -32,7 +32,9 @@
       "showProgress": true,
       "showArtInBar": true,
       "reduceMotion": false,
-      "keepHistory": true
+      "keepHistory": true,
+      "volumeOsd": true,
+      "trackOsd": false
     },
     "schema": [
       {
@@ -79,6 +81,16 @@
         "key": "keepHistory",
         "type": "boolean",
         "label": "Keep a local Recently played log"
+      },
+      {
+        "key": "volumeOsd",
+        "type": "boolean",
+        "label": "Show volume changes on screen using Omarchy's OSD"
+      },
+      {
+        "key": "trackOsd",
+        "type": "boolean",
+        "label": "Show an OSD when the track changes"
       }
     ]
   }

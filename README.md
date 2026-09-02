@@ -16,7 +16,15 @@ the time from *"I want that record"* to it playing.
   trim and a zone switcher.
 - **Library browser** — a fullscreen, keyboard-first browser laid out like the
   Roon app: categories left, content right, cover grid where it earns its
-  place. Plus a Queue and a Recently played the core cannot give us.
+  place. It opens on Recently played as a wall of covers, and an album or an
+  artist gets a screen of its own — cover, artist, a numbered track list, and
+  one press to play. Plus a Queue, a Recently played and Favourites the core
+  cannot give us.
+- **A–Z rail** — 788 albums is not a list you scroll. A short level is pulled
+  in whole and indexed, so pressing a letter lands on it.
+- **Player bar** — the browser carries the transport, the seek bar, the volume
+  and the active room along the bottom, so browsing is never a dead end for
+  playback.
 - **Output format** — what the speaker is actually decoding, asked of the
   speaker, because Roon will not say.
 
@@ -60,6 +68,13 @@ Per-widget settings live in the widget's entry in `~/.config/omarchy/shell.json`
 | `showOutputFormat` | `true` | Ask the zone's endpoint what it is decoding. Involves LAN queries to third-party devices; set `false` to stay off the network. |
 | `showProgress` | `true` | A hairline progress line under the bar label. |
 | `showArtInBar` | `true` | Album art in place of the music glyph in the bar. |
+| `reduceMotion` | `false` | Stop the marquee, the pulses and the fades. |
+| `keepHistory` | `true` | Keep the recently-played log and the favourites list. |
+| `volumeOsd` | `true` | Show volume changes on Omarchy's OSD. |
+| `trackOsd` | `false` | Show an OSD on every track change. |
+
+Everything above is also reachable from the panel: click the gear beside
+**Browse library**. The file is the fallback, not the interface.
 
 ```json
 { "id": "io.github.jesse-chelin.roon", "core": "192.168.1.20", "showWhenIdle": true }
@@ -93,7 +108,20 @@ survive most VPNs, VLAN boundaries, or a bridged/NAT'd VM.
 | `s`                 | Search Roon from any depth (offers the last term back) |
 | `g`                 | Jump to the category pane                            |
 | `1`–`9`             | Activate that row in the focused pane                |
+| `Alt`+`A`–`Z`       | Jump to a letter in a long list                      |
+| `f`                 | Favourite the album you are on                       |
+| `p`                 | Play or pause                                        |
+| `[` / `]`           | Previous or next track                               |
+| `,` / `.`           | Seek back or forward ten seconds                     |
+| `-` / `=`           | Volume down or up                                    |
+| `m`                 | Mute                                                 |
+| `z`                 | Play in the next room                                |
+| `x`                 | Clear the recently-played log                        |
+| `?`                 | The whole list, on screen                            |
 | `Esc`               | Close (clears the search/filter first)               |
+
+The `?` overlay is the authoritative version of this table — a test asserts
+every key the browser dispatches on appears in it.
 
 Picking a leaf action — Play Now, Add Next, Queue, Start Radio — dismisses the
 browser, since that is the end of the errand. Set `closeBrowserAfterAction` to
@@ -180,8 +208,20 @@ Run every check that does not need a Roon core:
 ```
 
 That is the manifest schema check, `qmllint` against the shell's imports, the
-QML unit tests, and a syntax pass over the bridge — one entry point, suitable
-for CI.
+QML unit tests, two structural guards, and the Python tests — one entry point,
+and the one CI runs. Steps needing the Omarchy shell or the `omarchy` CLI skip
+themselves when those are absent, so the same script works on a bare runner:
+see `.github/workflows/check.yml`.
+
+The two structural guards exist because their failure modes are silent.
+`test_bridge_structure.py` catches a method defined twice in the same class —
+Python keeps the last one, and a string-replace across two classes has slipped
+that in here twice. `test_qml_structure.py` catches a property bound twice in
+one object — `qmllint` is clean on it, the engine rejects it at load, and the
+widget simply vanishes from the bar.
+
+The bridge tests need `roonapi`, so `check.sh` reaches for the plugin's venv
+first and falls back to any interpreter that can already import it.
 
 ### Layout
 
@@ -192,7 +232,13 @@ for CI.
 | `BrowserToolbar.qml` | The level heading, breadcrumb, view toggle, and **both** text boxes |
 | `FocusArbiter.qml` | Who owns keyboard focus. ~40 lines, unit-tested |
 | `NavPane.qml` / `ContentPane.qml` | Renderers over the browser's state |
-| `BarWidget.qml` | Bar item and now-playing panel |
+| `ContentPane.qml` | Ordinary levels: cover grid or row list |
+| `DetailPane.qml` | Albums and artists, which get a screen rather than a list |
+| `AlphabetRail.qml` | A–Z jump for a level held whole |
+| `NowPlayingBar.qml` | The browser's player bar |
+| `KeyboardHelp.qml` | The `?` reference, built from one list in `RoonModel.js` |
+| `BarWidget.qml` | The bar item |
+| `PlaybackPanel.qml` | The now-playing panel behind it |
 | `SetupGuide.qml` | Onboarding, shared by the panel and the browser |
 
 Both text boxes live in one component because they compete for focus, and that

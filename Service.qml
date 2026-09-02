@@ -35,6 +35,13 @@ Item {
   // Recording what you listen to is the plugin's own choice, not Roon's, so
   // it is switchable and clearable.
   property bool keepHistory: true
+
+  // Volume moved from the keyboard is otherwise invisible: nothing is on
+  // screen, and the only feedback is the music itself. On by default for that
+  // reason. Track changes are the opposite — an OSD on every track all day is
+  // a thing you would want to turn off, so it starts off.
+  property bool volumeOsd: true
+  property bool trackOsd: false
   onKeepHistoryChanged: send({ cmd: "history_enabled", on: keepHistory })
   onShowOutputFormatChanged: if (bridge.running) restart()
 
@@ -235,6 +242,13 @@ Item {
       flushVolume()          // lead with the first move so it feels instant
       volumeFlush.start()
     }
+    // Every volume path funnels through here — the bar's wheel, the two
+    // sliders, the keyboard, the per-output faders — so the OSD hangs off this
+    // one place rather than off each caller.
+    if (root.volumeOsd) {
+      var zone = Model.resolveActiveZone(root.zones, root.preferredZoneId)
+      root.showOsd("volume", zone ? Model.zoneLabel(zone) : "Roon", value)
+    }
     return true
   }
 
@@ -306,7 +320,13 @@ Item {
     var zone = Model.zoneById(zones, zoneTarget(zoneId)) || activeZone
     var output = Model.primaryOutput(zone)
     if (!output) return false
-    return send({ cmd: "mute", output: output.output_id, mute: !Model.zoneMuted(zone) })
+    var muting = !Model.zoneMuted(zone)
+    if (root.volumeOsd) {
+      root.showOsd(muting ? "volume-muted" : "volume",
+                   Model.zoneLabel(zone) + (muting ? " muted" : ""),
+                   muting ? -1 : Model.zoneVolumePercent(zone))
+    }
+    return send({ cmd: "mute", output: output.output_id, mute: muting })
   }
 
   function transfer(fromZoneId, toZoneId) {
@@ -516,12 +536,25 @@ Item {
   function handleEvent(payload) {
     switch (payload.type) {
       case "status":
+        // A core that went away and came back is a new session: it mints
+        // fresh browse item_keys, so every key we hold is dead. Dropping the
+        // cached level and roots here is what makes the browser refetch
+        // instead of sending keys the core no longer recognises.
+        if (payload.state !== "ready" && root.ready) {
+          root.roots = []
+          root.browse = { items: [], crumbs: [], title: "" }
+          root.letters = []
+          root.queue = []
+          root.queueZoneId = ""
+        }
         root.status = payload
         if (payload.state === "error") root.noteError(payload.message || "Roon error")
         else if (payload.state === "ready") root.dismissError()
         break
       case "zones":
+        var previous = root.activeZone
         root.zones = payload.zones || []
+        if (root.trackOsd) root.announceTrack(previous, root.activeZone)
         break
       case "endpoints":
         root.endpoints = payload.data || ({})
@@ -585,6 +618,44 @@ Item {
   onCoreHostChanged: if (bridge.running) restart()
 
   Component.onCompleted: mockCheck.running = true
+
+  // -- on-screen display ----------------------------------------------------
+  //
+  // Omarchy's own OSD, reached the way anything else reaches it. Deliberately
+  // not a surface of our own: volume from this plugin should look exactly like
+  // volume from the audio widget, because to the person watching it is the
+  // same act.
+  Process { id: osdProcess }
+
+  function showOsd(icon, message, value) {
+    var payload = { icon: icon, message: message, duration: 1400 }
+    if (value !== undefined && value >= 0) {
+      payload.value = value
+      payload.max = 100
+    }
+    osdProcess.running = false
+    osdProcess.command = ["omarchy-shell", "-q", "osd", "show", JSON.stringify(payload)]
+    osdProcess.running = true
+  }
+
+  // Only the zone being listened to, only while it is playing, and only when
+  // the track genuinely changed — a zone payload arrives for every seek tick.
+  function announceTrack(before, after) {
+    if (!after || after.state !== "playing" || !after.title) return
+    if (before && before.zone_id === after.zone_id && before.title === after.title) return
+    root.showOsd("music", after.artist ? after.title + " · " + after.artist : after.title, -1)
+  }
+
+  function announceVolume(zoneId) {
+    if (!volumeOsd) return
+    var zone = Model.zoneById(zones, zoneTarget(zoneId)) || activeZone
+    if (!zone) return
+    if (Model.zoneMuted(zone)) {
+      root.showOsd("volume-muted", Model.zoneLabel(zone) + " muted", -1)
+      return
+    }
+    root.showOsd("volume", Model.zoneLabel(zone), Model.zoneVolumePercent(zone))
+  }
 
   // The bridge needs its venv. Rather than let Process fail with a bare
   // ENOENT the user can't act on, check first and say what to run.

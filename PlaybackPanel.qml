@@ -813,6 +813,30 @@ Item {
         onClicked: root.setSetting("reduceMotion", !checked)
       }
 
+      Toggle {
+        width: parent.width
+        label: "Show volume on screen"
+        description: "Uses Omarchy's own OSD, the way the audio widget does."
+        checked: root.widget ? root.widget.volumeOsdSetting : true
+        foreground: root.fg
+        accent: Color.accent
+        fontFamily: root.fontFamily
+        titleSize: Style.font.bodySmall
+        onClicked: root.setSetting("volumeOsd", !checked)
+      }
+
+      Toggle {
+        width: parent.width
+        label: "Announce each track"
+        description: "An OSD on every track change. Off by default; it is a lot."
+        checked: root.widget ? root.widget.trackOsdSetting : false
+        foreground: root.fg
+        accent: Color.accent
+        fontFamily: root.fontFamily
+        titleSize: Style.font.bodySmall
+        onClicked: root.setSetting("trackOsd", !checked)
+      }
+
       PanelSectionHeader {
         text: "In the bar"
         foreground: root.fg

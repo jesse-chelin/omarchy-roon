@@ -271,6 +271,119 @@ class History(unittest.TestCase):
         self.assertEqual([r["album"] for r in rows], ["Real"])
 
 
+class FakeApi:
+    def __init__(self, ready=True):
+        self.ready = ready
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+
+class Reconnect(unittest.TestCase):
+    """A Roon core that restarts — an update, a reboot, a Nucleus power-cycled
+    — used to be permanently fatal to a running plugin: the connect loop
+    returned on first success and nothing watched it afterwards."""
+
+    def setUp(self):
+        # emit() writes a line of NDJSON to stdout, which is the bridge's whole
+        # protocol; captured here so the tests neither print it nor lose it.
+        self.sent = []
+        self._emit, rb.emit = rb.emit, self.sent.append
+
+    def tearDown(self):
+        rb.emit = self._emit
+
+    def kinds(self):
+        return [e["type"] for e in self.sent]
+
+    def backend(self, ready=True):
+        b = backend()
+        b._api = FakeApi(ready=ready)
+        b._levels = [{"title": "Albums"}]
+        b._roots = [{"title": "Library"}]
+        b._queue_subs = {"zone-1"}
+        b._queues = {"zone-1": [{"title": "a track"}]}
+        b._last_titles = {"zone-1": "a track"}
+        b.mpris = None
+        b.stopped = False
+        return b
+
+    def test_health_follows_the_api(self):
+        self.assertTrue(self.backend(ready=True).api_healthy())
+        self.assertFalse(self.backend(ready=False).api_healthy())
+
+    def test_health_is_false_with_no_connection_at_all(self):
+        b = backend()
+        b._api = None
+        self.assertFalse(b.api_healthy())
+
+    # Everything the plugin holds is keyed to the session that ended. Browse
+    # item_keys are minted per level and are dead the moment the core
+    # restarts; keeping any of it would make the next connection lie.
+    def test_dropping_lets_go_of_everything_keyed_to_the_session(self):
+        b = self.backend()
+        api = b._api
+        b.drop_connection("gone")
+        self.assertTrue(api.stopped, "the old connection was left open")
+        self.assertIsNone(b._api)
+        self.assertEqual(b._levels, [])
+        self.assertEqual(b._roots, [])
+        self.assertEqual(b._queue_subs, set())
+        self.assertEqual(b._queues, {})
+        self.assertEqual(b._last_titles, {})
+
+    def test_dropping_tells_the_ui_before_it_is_asked(self):
+        self.backend().drop_connection("Lost the Roon core")
+        self.assertIn("zones", self.kinds(), "the old zone list was left on screen")
+        self.assertIn("status", self.kinds())
+        status = [e for e in self.sent if e["type"] == "status"][0]
+        self.assertEqual(status["state"], "error")
+        self.assertIn("Lost the Roon core", status["message"])
+        self.assertEqual([e for e in self.sent if e["type"] == "zones"][0]["zones"], [])
+
+    # An api that fails to stop must not take the reconnect down with it.
+    def test_a_connection_that_will_not_close_is_still_let_go(self):
+        b = self.backend()
+
+        def explode():
+            raise OSError("socket already gone")
+
+        b._api.stop = explode
+        b.drop_connection("gone")
+        self.assertIsNone(b._api)
+
+    def test_the_watcher_holds_while_the_core_answers(self):
+        b = self.backend(ready=True)
+        ticks = []
+
+        def stop_after_three(_seconds):
+            ticks.append(1)
+            if len(ticks) >= 3:
+                b.stopped = True
+
+        original, rb.time.sleep = rb.time.sleep, stop_after_three
+        try:
+            rb._watch_connection(b, health_interval=0)
+        finally:
+            rb.time.sleep = original
+        self.assertIsNotNone(b._api, "a healthy core was dropped")
+
+    def test_the_watcher_returns_as_soon_as_the_core_stops_answering(self):
+        b = self.backend(ready=True)
+
+        def fail_on_first_tick(_seconds):
+            b._api.ready = False
+
+        original, rb.time.sleep = rb.time.sleep, fail_on_first_tick
+        try:
+            rb._watch_connection(b, health_interval=0)
+        finally:
+            rb.time.sleep = original
+        self.assertIsNone(b._api, "the dead connection was kept")
+        self.assertIn("status", self.kinds())
+
+
 class Breadcrumbs(unittest.TestCase):
     # A search wraps an album in a container of the same name, so the stack
     # legitimately holds it twice.
